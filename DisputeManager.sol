@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./ReputationManager.sol";
+
 contract DisputeManager {
     struct Dispute {
         uint256 auctionId;
@@ -13,33 +15,31 @@ contract DisputeManager {
         mapping(address => bool) voted;
     }
 
+    ReputationManager public reputationManager;
     address public backend;
     uint256 public disputeCount;
+    uint256 public minReputationToVote = 10;
+
     mapping(uint256 => Dispute) public disputes;
-    mapping(address => bool) public authorizedVoters;
 
     event DisputeOpened(uint256 disputeId, uint256 auctionId, address buyer, string reason);
     event Voted(uint256 disputeId, address voter, bool favorBuyer);
     event DisputeResolved(uint256 disputeId, bool favorBuyer);
-    event VoterAuthorized(address voter);
 
-    constructor() {
+    constructor(address _reputationManager) {
         backend = msg.sender;
+        reputationManager = ReputationManager(_reputationManager);
     }
 
     modifier onlyBackend() {
-        require(msg.sender == backend, "Only backend can authorize");
+        require(msg.sender == backend, "Only backend");
         _;
     }
 
-    modifier onlyAuthorizedVoter() {
-        require(authorizedVoters[msg.sender], "Not authorized to vote");
+    modifier onlyReputableVoter() {
+        uint256 rep = reputationManager.getReputation(msg.sender);
+        require(rep >= minReputationToVote, "Not enough reputation to vote");
         _;
-    }
-
-    function authorizeVoter(address wallet) external onlyBackend {
-        authorizedVoters[wallet] = true;
-        emit VoterAuthorized(wallet);
     }
 
     function openDispute(uint256 _auctionId, string calldata _reason) external {
@@ -53,7 +53,7 @@ contract DisputeManager {
         disputeCount++;
     }
 
-    function voteDispute(uint256 _disputeId, bool _favorBuyer) external onlyAuthorizedVoter {
+    function voteDispute(uint256 _disputeId, bool _favorBuyer) external onlyReputableVoter {
         Dispute storage d = disputes[_disputeId];
         require(!d.resolved, "Dispute already resolved");
         require(!d.voted[msg.sender], "Already voted");
@@ -73,7 +73,6 @@ contract DisputeManager {
         }
     }
 
-    // Admin fallback: allows the backend to resolve disputes manually if necessary
     function resolveDisputeAsBackend(uint256 _disputeId, bool _favorBuyer) external onlyBackend {
         Dispute storage d = disputes[_disputeId];
         require(!d.resolved, "Already resolved");
@@ -82,5 +81,9 @@ contract DisputeManager {
         d.favorBuyer = _favorBuyer;
 
         emit DisputeResolved(_disputeId, _favorBuyer);
+    }
+
+    function updateMinReputation(uint256 _newRep) external onlyBackend {
+        minReputationToVote = _newRep;
     }
 }
