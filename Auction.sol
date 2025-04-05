@@ -2,15 +2,18 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./ReputationManager.sol";
 
 contract Auction {
 
     IERC20 public usdcToken;
     address public owner;
+    ReputationManager public reputationManager;
 
-    constructor(address _usdcAddress) {
+    constructor(address _usdcAddress, address _reputationAddress) {
         usdcToken = IERC20(_usdcAddress);
         owner = msg.sender;
+        reputationManager = ReputationManager(_reputationAddress);
     }
 
     struct AuctionData {
@@ -35,6 +38,11 @@ contract Auction {
     event DeliveryConfirmed(uint id, uint sellerAmount, uint feeAmount);
 
     function createAuction(uint _durationInSeconds, uint _basePrice) external {
+        require(
+            reputationManager.getReputation(msg.sender) >= 10,
+            "Insufficient reputation to create auction"
+        );
+
         auctions[auctionCount] = AuctionData({
             seller: msg.sender,
             startTime: block.timestamp,
@@ -92,6 +100,8 @@ contract Auction {
 
         usdcToken.transfer(owner, fee);
         usdcToken.transfer(auction.seller, sellerAmount);
+
+        reputationManager.increaseReputation(auction.seller, 10);
 
         emit DeliveryConfirmed(_id, sellerAmount, fee);
     }
